@@ -973,6 +973,48 @@ func consecutiveNumbersSum(n int) int {
 
 
 
+# LCM & GCD
+
+## ~~[858/90. 镜面反射](https://leetcode.cn/problems/mirror-reflection/)~~
+
+<img src="./%E6%95%B0%E5%AD%A6-%E5%8D%9A%E5%BC%88-%E8%AE%A1%E7%BB%84-OS%E7%AD%89.assets/image-20231213102851097.png" alt="image-20231213102851097" style="zoom:67%;" />
+
+
+
+> 就是看纵方向上走了P的整数倍的时候走了多少个q
+>
+> - 偶数个 => 到2
+> - 奇数个
+>   - 路径走了奇数个p => 到1
+>   - 偶数个 => 到0
+
+```GO
+func mirrorReflection(p int, q int) int {
+	lcm := p / gcd(p, q) * q
+	if (lcm/q)%2 == 0 {
+		return 2
+	} else if (lcm/p)%2 == 0 {
+		return 0
+	}
+	return 1
+}
+
+func gcd(i, j int) int {
+	if j == 0 {
+		return i
+	}
+	return gcd(j, i%j)
+}
+```
+
+
+
+
+
+
+
+
+
 
 
 # 质数
@@ -2347,6 +2389,191 @@ func main() {
 ```
 
 
+
+# 扫描线算法
+
+## 扫描线
+
+<img src="./%E6%95%B0%E5%AD%A6-%E5%8D%9A%E5%BC%88-%E8%AE%A1%E7%BB%84-OS%E7%AD%89.assets/image-20231207112734973.png" alt="image-20231207112734973" style="zoom:50%;" />
+
+- `2n-1`个区块
+- 离散化线段树, 因此要有映射关系!!!!!, 防止区间过大
+
+<img src="./%E6%95%B0%E5%AD%A6-%E5%8D%9A%E5%BC%88-%E8%AE%A1%E7%BB%84-OS%E7%AD%89.assets/image-20231212161839302.png" alt="image-20231212161839302" style="zoom:50%;" />
+
+- 离散化三部曲
+  - 排序
+  - 去重
+  - 二分查找下标
+- 如果区间一一映射, 就会留下空挡, 那么怎么办呢?
+  - 因为传统用的线段树就是离散的点
+  - 但是扫描线是连续的几何
+- 其实Tree每个儿子节点对应的就是相邻两个x之间的这一段!!!!!!!!
+  - 所以可以使用cnt+tag看覆盖了多少次
+  - 如果一个节点自己被覆盖, 就代表两个儿子至少都被覆盖一次,否则分别计算儿子的和
+- 真正的计算逻辑就是没两个平行线之间的一定是矩形(可能是多个, 但是都是底乘高)
+  - 这样就可以啦
+  - 一共计算逻辑上`2*n-1`次
+
+<img src="./%E6%95%B0%E5%AD%A6-%E5%8D%9A%E5%BC%88-%E8%AE%A1%E7%BB%84-OS%E7%AD%89.assets/image-20231212171024011.png" alt="image-20231212171024011" style="zoom:50%;" />
+
+<img src="./%E6%95%B0%E5%AD%A6-%E5%8D%9A%E5%BC%88-%E8%AE%A1%E7%BB%84-OS%E7%AD%89.assets/image-20231212172852947.png" alt="image-20231212172852947" style="zoom:50%;" />
+
+```go
+type line struct { // 存储的是一条线
+	x1, x2, y int64 // 两横一纵
+	tag       int64 // 入边:+1, 出边:-1
+}
+
+type node struct {
+	// 线段树的节点信息
+	// l, r 节点区间
+	// cnt 区间覆盖次数, 为正代表这个区间已经被完整覆盖
+	// len 区间覆盖长度(它对应的长度里面有多少是被覆盖的)
+	// cnt > 0, 则len就是对应的长度
+	l, r, cnt, len int64
+}
+
+type tree struct {
+	nodes []node  // 线段树的所有节点
+	lines []line  // 所有线段
+	x     []int64 //所有的x
+}
+
+func (t *tree) init(n int) {
+	// 初始化树, 注意节点数是8倍的点数, 自然就是16倍的矩形数
+	t.nodes = make([]node, 2*8*n+1)
+	t.lines = make([]line, 2*n+1)
+	t.x = make([]int64, 2*n+1)
+}
+
+func (t *tree) build(k, l, r int64) {
+	// k 真实存储下标, l,r 区间端点
+	// 递归向下把l和r填上
+	t.nodes[k] = node{l, r, 0, 0}
+	if l == r {
+		return
+	}
+	mid := (l + r) / 2
+	t.build(2*k, l, mid)
+	t.build(2*k+1, mid+1, r)
+}
+
+func (t *tree) pushUp(k int64) {
+	// 是否区间需要向右边伸展
+	l, r := t.nodes[k].l, t.nodes[k].r
+	// 若已被完全覆盖,则长度就是节点完全对应的
+	if t.nodes[k].cnt != 0 {
+		t.nodes[k].len = t.x[r+1] - t.x[l]
+	} else {
+		// 否则就是两个儿子的
+		t.nodes[k].len = t.nodes[2*k].len + t.nodes[2*k+1].len
+	}
+}
+
+func (t *tree) modify(k, l, r, tag int64) {
+	if l > t.nodes[k].r || r < t.nodes[k].l {
+		return // 越界
+	}
+	if l <= t.nodes[k].l && r >= t.nodes[k].r { // 完全覆盖
+		t.nodes[k].cnt += tag // 修改一个tag
+		t.pushUp(k)           // 此节点要改一下len
+		return
+	}
+	// 已经被完全覆盖就不用向下修改了
+	// 否则就是向下
+	t.modify(2*k, l, r, tag)
+	t.modify(2*k+1, l, r, tag)
+	t.pushUp(k)
+}
+
+func (t *tree) lowerBound(target int64) int64 {
+	// 二分查找x
+	// 这样更快啊
+	low, high := 0, len(t.x)
+
+	for low < high {
+		mid := low + (high-low)/2
+		if t.x[mid] < target {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return int64(low)
+}
+
+func (t *tree) uniqueX() {
+	// 获得x的独有
+	// 第一个元素不用, 不要涉及
+	if len(t.x) <= 1 {
+		return
+	}
+
+	i := 1
+	for j := 2; j < len(t.x); j++ {
+		if t.x[j] != t.x[i] {
+			i++
+			t.x[i] = t.x[j]
+		}
+	}
+	t.x = t.x[:i+1]
+}
+
+func (t *tree) area() int64 {
+	// 对X坐标进行排序 并去重
+	sort.Slice(t.x[1:], func(i, j int) bool {
+		return t.x[1+i] < t.x[1+j] // fkfkfkf 要+1
+	})
+	t.uniqueX()
+
+	// 对扫描线进行排序
+	sort.Slice(t.lines[1:], func(i, j int) bool {
+		return t.lines[1+i].y < t.lines[1+j].y
+	})
+
+	// 创建树
+	t.build(1, 1, int64(len(t.x)))
+
+	// 计算结果
+	var res int64 = 0
+	for i := 1; i < len(t.lines)-1; i++ {
+		l := t.lowerBound(t.lines[i].x1)
+		r := t.lowerBound(t.lines[i].x2)
+		// 传参是确保修改的区间
+		// 所以传参的r要减去1
+		t.modify(1, l, r-1, t.lines[i].tag)
+
+		// 到t.lines[i+1].y这一段永远是逻辑上的矩形
+		res = res + t.nodes[1].len*(t.lines[i+1].y-t.lines[i].y)
+	}
+	return res
+}
+
+func main() {
+	// 输入与输出
+	in := bufio.NewReader(os.Stdin)
+
+	// 读取矩形个数
+	var n int
+	fmt.Fscanln(in, &n)
+
+	// 一颗树
+	var t tree
+	t.init(n)
+
+	// 读取每个矩形的信息
+	for i := 1; i <= n; i++ {
+		var x1, y1, x2, y2 int64
+		fmt.Fscanln(in, &x1, &y1, &x2, &y2)
+		t.lines[i] = line{x1, x2, y1, 1}
+		t.lines[i+n] = line{x1, x2, y2, -1}
+		t.x[i] = x1
+		t.x[i+n] = x2
+	}
+	fmt.Println(t.area())
+}
+```
 
 
 
